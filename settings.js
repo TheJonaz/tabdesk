@@ -5,12 +5,16 @@
 // model that project runs with; a project with no entry follows Claude Code's
 // own default. closedProjects lists the project paths whose tab was closed with
 // the ×, so the rail doesn't rebuild them from the directories on disk.
+// projectOrder is the rail read top to bottom as the last session left it, so
+// the tabs come back where you put them instead of in directory-mtime order.
 
 const { app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-const DEFAULTS = { theme: 'system', language: 'system', projectModels: {}, closedProjects: [] };
+const DEFAULTS = {
+  theme: 'system', language: 'system', projectModels: {}, closedProjects: [], projectOrder: [],
+};
 
 let cache = null;
 const file = () => path.join(app.getPath('userData'), 'settings.json');

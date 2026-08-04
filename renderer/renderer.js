@@ -77,6 +77,39 @@ function hoistOnDone(t) {
   if (tabList.firstElementChild !== t.tabEl) tabList.prepend(t.tabEl);
 }
 
+// ...and a position that is forgotten on exit is not a position. The rail used
+// to be rebuilt in directory-mtime order at every start, so a night of agents
+// writing files handed back a rail nobody arranged. Every change to it is
+// written down instead, and main reads it at the next start.
+//
+// An observer rather than a call at each of the places that reorder the rail
+// (hoist, new tab, picked project, closed tab): childList fires for exactly
+// those, and cannot be forgotten by a fifth one added later. The debounce
+// collapses a boot that appends twenty tabs into a single write.
+let orderTimer = null;
+function writeOrder() {
+  clearTimeout(orderTimer);
+  orderTimer = null;
+  const byEl = new Map([...tabs.values()].map((x) => [x.tabEl, x]));
+  // Ad-hoc terminals have no cwd and nothing to come back to; main drops
+  // folders from outside the projects directory for the same reason.
+  window.api.setProjectOrder(
+    [...tabList.children].map((el) => byEl.get(el)).filter((x) => x && x.cwd).map((x) => x.cwd),
+  );
+}
+function rememberOrder() {
+  clearTimeout(orderTimer);
+  orderTimer = setTimeout(writeOrder, 400);
+}
+new MutationObserver(rememberOrder).observe(tabList, { childList: true });
+
+// A tab that hoists just before you quit moved for the same reason as any
+// other, so it can't be the one position that is lost. Closing the window
+// happens to outlast the debounce today, but that is the window manager's
+// timing and not a promise: flush what is pending instead of leaving the last
+// thing that happened to the race.
+window.addEventListener('pagehide', () => { if (orderTimer) writeOrder(); });
+
 // Called on every chunk of pty output (xterm.js backend) or whenever the
 // embedded terminal writes. Marks background tabs busy while output flows, then
 // green ("done") once they fall silent.

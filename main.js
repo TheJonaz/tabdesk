@@ -264,6 +264,38 @@ function setProjectClosed(dir, closed) {
   settings.set('closedProjects', [...set]);
 }
 
+// ---- The order the rail was left in -----------------------------------------
+//
+// The rail is built from directories on disk, and it used to be sorted by mtime
+// on every start — so a night of agents writing files handed you a different
+// rail in the morning than the one you closed. Position is the whole point of
+// this rail (a tab hoists to the top when it goes green), and a position that
+// is forgotten every restart is not a position.
+//
+// The renderer writes the order down whenever the rail changes; a start reads
+// it back. Only what the rail rebuilds is worth keeping, so this drops folders
+// opened from elsewhere for the same reason setProjectClosed does. Directories
+// that have since been deleted or renamed fall out by themselves: the next save
+// only lists tabs that actually exist.
+function projectOrder() {
+  const list = settings.get('projectOrder');
+  return Array.isArray(list) ? list.filter((p) => typeof p === 'string') : [];
+}
+
+function setProjectOrder(paths) {
+  if (!Array.isArray(paths)) return;
+  const root = path.resolve(PROJECTS_DIR);
+  const seen = new Set();
+  const next = [];
+  for (const p of paths) {
+    if (typeof p !== 'string' || !p || seen.has(p)) continue;
+    if (path.dirname(path.resolve(p)) !== root) continue;
+    seen.add(p);
+    next.push(p);
+  }
+  settings.set('projectOrder', next);
+}
+
 // ---- Export / import of the portable "light layer" ------------------------
 //
 // Its own top-level window, for the same reason the picker is one: the
@@ -642,12 +674,16 @@ app.whenReady().then(async () => {
 
   // ---- Terminal lifecycle over IPC ----
 
-  // List project directories under PROJECTS_DIR, most-recently-modified first.
+  // List project directories under PROJECTS_DIR in the order the rail was last
+  // left in, with anything new since then on top, most-recently-modified first.
+  // With nothing remembered yet — first start after an upgrade — every project
+  // counts as new, which is exactly the old mtime order.
   // `closed` carries the user's × on that tab: the rail leaves those out, the
   // picker still offers them (see closedProjects below).
   ipcMain.handle('projects:list', () => {
     try {
       const closed = new Set(closedProjects());
+      const rank = new Map(projectOrder().map((p, i) => [p, i]));
       return fs.readdirSync(PROJECTS_DIR, { withFileTypes: true })
         .filter((e) => e.isDirectory())
         .map((e) => {
@@ -656,7 +692,14 @@ app.whenReady().then(async () => {
           try { mtime = fs.statSync(full).mtimeMs; } catch (_) { /* skip */ }
           return { name: e.name, path: full, mtime, model: model.getFor(full), closed: closed.has(full) };
         })
-        .sort((a, b) => b.mtime - a.mtime);
+        .sort((a, b) => {
+          const ra = rank.has(a.path) ? rank.get(a.path) : -1;
+          const rb = rank.has(b.path) ? rank.get(b.path) : -1;
+          if (ra === -1 && rb === -1) return b.mtime - a.mtime;
+          if (ra === -1) return -1;
+          if (rb === -1) return 1;
+          return ra - rb;
+        });
     } catch (_) {
       return [];
     }
@@ -665,6 +708,11 @@ app.whenReady().then(async () => {
   // Closing a tab is a decision about the rail, so it has to outlive the
   // session; opening the project again takes it back.
   ipcMain.on('projects:closed', (event, { path: dir, closed }) => setProjectClosed(dir, closed));
+
+  // The rail as it stands, top first. Sent debounced by the renderer, so this
+  // is a whole-list replace rather than a diff — the page is the only thing
+  // that knows the order, and a partial update could only disagree with it.
+  ipcMain.on('projects:order', (event, { paths }) => setProjectOrder(paths));
 
   // ---- New tab: pick an existing project, or create one ----
   ipcMain.handle('projects:pick', () => openProjectPicker(win));

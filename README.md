@@ -13,7 +13,7 @@
 
 ## Features
 
-- **Project tab rail** — every directory under your projects folder becomes a tab, most-recently-modified first. Opening one spawns a terminal already running `claude --permission-mode auto` in that project.
+- **Project tab rail** — every directory under your projects folder becomes a tab. The rail comes back in the order you left it (a project seen for the first time goes on top, most-recently-modified first). Opening one spawns a terminal already running `claude --permission-mode auto` in that project.
 - **Grid view** — cycle from 1 up to 6 panels visible at once (`▦ Grid`) to watch several agents work side by side.
 - **Activity flags** — background tabs pulse while their terminal streams output and turn green when they fall quiet ("your turn").
 - **Live preview dock** — runs the active project (static HTML, Node, Python/Flask/FastAPI/Django, Rust, Go, …), finds the port it binds, and renders it in a webview. Hover any element to reveal its source.
