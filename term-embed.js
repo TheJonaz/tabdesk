@@ -72,6 +72,23 @@ const ACTIVITY_POLL_MS = 500;
 // painted tabs green that nobody had worked in.
 const ACTIVITY_MIN_BYTES = 512;
 
+// One poll over that floor is still not a command running.
+//
+// Measured across four minutes of live panes: a session sitting idle emits a
+// lone redraw now and then — 539 bytes on one, 3465 on another, 640 on a third,
+// each a single poll with silence either side. A session actually working held
+// the counter up for 300-400 consecutive polls. The catch is that both write
+// the same amount per poll: 388 of one working pane's 395 polls were between
+// 512 bytes and 4 kB, squarely on top of the redraw range. Magnitude cannot
+// separate them, so raising the floor would only buy quiet by going deaf.
+// Persistence separates them cleanly, because a redraw has nothing to follow it.
+//
+// A lone poll far above anything a redraw produces is still real — 60 kB
+// arriving at once is a command that printed and finished — so it counts on its
+// own rather than waiting for a second that never comes.
+const ACTIVITY_RUN_MS = 2000;
+const ACTIVITY_BURST_BYTES = 16384;
+
 // Starting up is not activity either: xterm writes tens of kB before the first
 // prompt and the command draws its own banner on top of that. Without a grace
 // period a tab you open and immediately switch away from goes "done" a few
@@ -118,6 +135,14 @@ function pollActivity() {
     if (prev === null) continue;                              // baseline, not activity
     if (at - rec.startedAt < ACTIVITY_GRACE_MS) continue;     // still starting up
     if (w - prev < ACTIVITY_MIN_BYTES) continue;              // idle repaint trickle
+    // Qualifying twice inside ACTIVITY_RUN_MS is what makes it a command rather
+    // than a redraw; a big enough single poll speaks for itself. Recording the
+    // moment before the test is what lets the second poll of a real run pass —
+    // and what lets a lone one time out before the next redraw arrives.
+    const sustained = rec.qualAt !== null && rec.qualAt !== undefined
+      && at - rec.qualAt <= ACTIVITY_RUN_MS;
+    rec.qualAt = at;
+    if (!sustained && w - prev < ACTIVITY_BURST_BYTES) continue;
     if (notifyActivity) notifyActivity(id);
   }
 }
@@ -529,6 +554,9 @@ async function hide(id) {
   // poll after a hide establish a new zero and report nothing, which is what
   // the `prev === null` branch in pollActivity is already there for.
   rec.wchar = null;
+  // Same for the run: whatever qualified while you were watching must not be
+  // the first half of a pair completed by the first redraw after you left.
+  rec.qualAt = null;
   // drain() does the unmap, and only when the window is actually mapped: the
   // renderer re-hides every hidden panel on each sync, so a resize drag would
   // otherwise spawn an xdotool unmap per frame per hidden tab.
