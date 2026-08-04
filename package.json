@@ -1,6 +1,6 @@
 {
   "name": "tabdesk",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Terminal workspace for Claude Code projects: a tab rail of terminals on the left, the active project on the right.",
   "main": "main.js",
   "scripts": {
