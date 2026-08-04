@@ -7,7 +7,7 @@
 
 Site: https://tabdesk.thern.io/
 Author: Jonaz Thern (info@thern.io, https://thern.io)
-Version: 0.1.12 · MIT licence
+Version: 0.1.13 · MIT licence
 
 ## What it is
 
